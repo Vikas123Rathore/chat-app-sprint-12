@@ -41,6 +41,11 @@ app.use('/api/message', messageRoutes);
 
 app.get('/', (req, res) => res.send({ ok: true, message: 'ChatFlow API' }));
 
+// debug endpoint to inspect cookies (development only)
+app.get('/api/debug/cookies', (req, res) => {
+  res.json({ cookies: req.cookies || {} });
+});
+
 // Create HTTP server and attach Socket.IO
 const server = http.createServer(app);
 const io = new Server(server, {

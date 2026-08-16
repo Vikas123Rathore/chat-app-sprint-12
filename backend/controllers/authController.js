@@ -27,13 +27,17 @@ exports.register = async (req, res) => {
     // set cookie with explicit maxAge to persist across browser sessions
     // token expiry is 7 days (see createToken). maxAge is in milliseconds.
     const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
+    // Use SameSite 'lax' which works for same-origin dev proxy setups.
+    // Do not set SameSite=None unless you also set Secure and serve over HTTPS.
+    const sameSite = 'lax'
+    const secure = process.env.NODE_ENV === 'production'
     res.cookie('token', token, {
       httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      sameSite,
+      secure,
       maxAge,
-      // expires is optional but explicit
       expires: new Date(Date.now() + maxAge),
+      path: '/',
     });
 
     const { password: _p, ...userData } = user.toObject();
@@ -61,12 +65,15 @@ exports.login = async (req, res) => {
 
     const token = createToken(user._id);
     const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
+    const sameSite = process.env.NODE_ENV === 'production' ? 'lax' : 'none'
+    const secure = process.env.NODE_ENV === 'production'
     res.cookie('token', token, {
       httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      sameSite,
+      secure,
       maxAge,
       expires: new Date(Date.now() + maxAge),
+      path: '/',
     });
 
     const { password: _p, ...userData } = user.toObject();
