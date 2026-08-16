@@ -119,8 +119,7 @@ export function AppProvider({ children }) {
   async function sendMessage(formData) {
     const res = await api.post('/message/send', formData)
     setMessages((prev) => [...prev, res.data.message])
-    // server will also emit 'newMessage' — optional emit from client if needed
-    // if (socketRef.current) socketRef.current.emit('message', res.data.message)
+    
     return res
   }
 
