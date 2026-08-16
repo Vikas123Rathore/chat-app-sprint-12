@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  @apply bg-gray-900 text-gray-100;
+}
+
+.chat-container {
+  @apply flex h-screen;
+}
+@import 'tailwindcss';
