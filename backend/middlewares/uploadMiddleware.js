@@ -3,8 +3,17 @@ const cloudinary = require('../config/cloudinary');
 const fs = require('fs');
 const path = require('path');
 
-// store uploads temporarily
-const upload = multer({ dest: path.join(__dirname, '..', 'uploads/') });
+const uploadDir = path.join(__dirname, '..', 'uploads/');
+
+const upload = multer({
+  dest: uploadDir,
+  fileFilter: (req, file, cb) => {
+    if (!file || !file.mimetype || !file.mimetype.startsWith('image/')) {
+      return cb(new Error('Only image files are allowed'));
+    }
+    cb(null, true);
+  },
+});
 
 const uploadMiddleware = (fieldName = 'image') => {
   const single = upload.single(fieldName);
@@ -19,24 +28,21 @@ const uploadMiddleware = (fieldName = 'image') => {
       }
 
       const filePath = req.file.path;
+      const localFileUrl = `/uploads/${req.file.filename}`;
 
-      // If cloudinary not configured, skip upload but keep local path
       if (!process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET || !process.env.CLOUDINARY_CLOUD_NAME) {
-        req.fileUrl = '';
-        // remove file
-        try { fs.unlinkSync(filePath); } catch (e) { }
+        req.fileUrl = localFileUrl;
         return next();
       }
 
       try {
         const result = await cloudinary.uploader.upload(filePath, { folder: 'chatflow' });
-        req.fileUrl = result.secure_url || '';
+        req.fileUrl = result?.secure_url || localFileUrl;
       } catch (uploadErr) {
         console.error('Cloudinary upload error', uploadErr);
-        req.fileUrl = '';
+        req.fileUrl = localFileUrl;
       }
 
-      // remove temp file
       try { fs.unlinkSync(filePath); } catch (e) { }
 
       next();
