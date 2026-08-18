@@ -11,7 +11,7 @@ import { io } from 'socket.io-client'
 
 const AppContext = createContext(null)
 
-const SERVER_URL = 'https://chat-app-sprint-12-backend.onrender.com'
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL
 
 export function AppProvider({ children }) {
   const [user, setUser] = useState(null)
@@ -22,16 +22,101 @@ export function AppProvider({ children }) {
   const socketRef = useRef(null)
 
   // ==========================================
-  // LOAD USER + ROOMS + SOCKET
+  // LOAD CURRENT USER
+  // ==========================================
+
+  async function loadMe() {
+    try {
+      const res = await api.get('/user/me')
+
+      if (res.data?.user) {
+        setUser(res.data.user)
+
+        // Keep user in localStorage
+        localStorage.setItem('chatflow_user', JSON.stringify(res.data.user))
+
+        return true
+      }
+
+      return false
+    } catch (error) {
+      console.log(
+        'Current user error:',
+        error.response?.data?.message || error.message,
+      )
+
+      /*
+       * If backend request fails temporarily,
+       * restore user from localStorage.
+       *
+       * This is only for keeping UI state.
+       * Actual authentication is still handled
+       * by the HTTP-only cookie.
+       */
+      try {
+        const savedUser = localStorage.getItem('chatflow_user')
+
+        if (savedUser) {
+          setUser(JSON.parse(savedUser))
+          return true
+        }
+      } catch (storageError) {
+        console.log('Local storage error:', storageError)
+      }
+
+      setUser(null)
+      return false
+    }
+  }
+
+  // ==========================================
+  // LOAD ROOMS
+  // ==========================================
+
+  async function loadRooms() {
+    try {
+      const res = await api.get('/room/all')
+
+      setRooms(res.data?.rooms || [])
+
+      return true
+    } catch (error) {
+      console.log(
+        'Load rooms error:',
+        error.response?.data?.message || error.message,
+      )
+
+      setRooms([])
+
+      return false
+    }
+  }
+
+  // ==========================================
+  // INITIAL APP LOAD
   // ==========================================
 
   useEffect(() => {
-    loadMe()
-    loadRooms()
+    let mounted = true
 
-    // Socket.IO - Render backend
-    const socket = io(SERVER_URL, {
+    const initializeApp = async () => {
+      const loggedIn = await loadMe()
+
+      if (mounted && loggedIn) {
+        await loadRooms()
+      }
+    }
+
+    initializeApp()
+
+    // ========================================
+    // SOCKET.IO CONNECTION
+    // ========================================
+
+    const socket = io(SOCKET_URL, {
       withCredentials: true,
+
+      // Try websocket first, fallback to polling
       transports: ['websocket', 'polling'],
     })
 
@@ -44,17 +129,37 @@ export function AppProvider({ children }) {
 
     // Socket connection error
     socket.on('connect_error', (error) => {
-      console.error('Socket connection error:', error.message)
+      console.log('Socket connection error:', error.message)
     })
 
-    // New message
+    // ========================================
+    // NEW MESSAGE
+    // ========================================
+
     socket.on('newMessage', (message) => {
       setMessages((prev) => {
+        /*
+         * If no room is selected,
+         * don't add message.
+         */
         if (!selectedRoom) {
           return prev
         }
 
+        /*
+         * Check whether message belongs
+         * to currently selected room.
+         */
         if (message.room?.toString() === selectedRoom._id?.toString()) {
+          /*
+           * Prevent duplicate message
+           */
+          const alreadyExists = prev.some((item) => item._id === message._id)
+
+          if (alreadyExists) {
+            return prev
+          }
+
           return [...prev, message]
         }
 
@@ -62,7 +167,10 @@ export function AppProvider({ children }) {
       })
     })
 
-    // New room
+    // ========================================
+    // NEW ROOM
+    // ========================================
+
     socket.on('roomCreated', (room) => {
       setRooms((prev) => {
         const alreadyExists = prev.some((item) => item._id === room._id)
@@ -75,54 +183,23 @@ export function AppProvider({ children }) {
       })
     })
 
-    // Cleanup
+    // ========================================
+    // CLEANUP
+    // ========================================
+
     return () => {
+      mounted = false
+
+      socket.off('connect')
+      socket.off('connect_error')
+      socket.off('newMessage')
+      socket.off('roomCreated')
+
       socket.disconnect()
+
       socketRef.current = null
     }
   }, [])
-
-  // ==========================================
-  // GET CURRENT USER
-  // ==========================================
-
-  async function loadMe() {
-    try {
-      const res = await api.get('/user/me')
-
-      if (res.data?.user) {
-        setUser(res.data.user)
-
-        localStorage.setItem('chatflow_user', JSON.stringify(res.data.user))
-      }
-    } catch (error) {
-      console.log(
-        'Current user error:',
-        error.response?.data?.message || error.message,
-      )
-
-      setUser(null)
-    }
-  }
-
-  // ==========================================
-  // GET ALL ROOMS
-  // ==========================================
-
-  async function loadRooms() {
-    try {
-      const res = await api.get('/room/all')
-
-      setRooms(res.data?.rooms || [])
-    } catch (error) {
-      console.log(
-        'Load rooms error:',
-        error.response?.data?.message || error.message,
-      )
-
-      setRooms([])
-    }
-  }
 
   // ==========================================
   // LOGIN
@@ -192,13 +269,13 @@ export function AppProvider({ children }) {
       )
     }
 
-    // Clear frontend state
+    // Clear React state
     setUser(null)
     setRooms([])
     setSelectedRoom(null)
     setMessages([])
 
-    // Remove local user
+    // Clear local user
     localStorage.removeItem('chatflow_user')
 
     // Disconnect socket
@@ -217,7 +294,15 @@ export function AppProvider({ children }) {
       const res = await api.post('/room/create', formData)
 
       if (res.data?.room) {
-        setRooms((prev) => [...prev, res.data.room])
+        setRooms((prev) => {
+          const exists = prev.some((room) => room._id === res.data.room._id)
+
+          if (exists) {
+            return prev
+          }
+
+          return [...prev, res.data.room]
+        })
       }
 
       return res
@@ -237,7 +322,7 @@ export function AppProvider({ children }) {
 
   async function selectRoom(room) {
     try {
-      // Join room in backend
+      // Join room through API
       await api.post(`/room/${room._id}/join`)
 
       // Join Socket.IO room
@@ -247,7 +332,7 @@ export function AppProvider({ children }) {
 
       setSelectedRoom(room)
 
-      // Get messages
+      // Fetch old messages
       await fetchMessages(room._id)
     } catch (error) {
       console.log(
@@ -258,7 +343,7 @@ export function AppProvider({ children }) {
   }
 
   // ==========================================
-  // GET ROOM MESSAGES
+  // FETCH MESSAGES
   // ==========================================
 
   async function fetchMessages(roomId) {
@@ -284,8 +369,14 @@ export function AppProvider({ children }) {
     try {
       const res = await api.post('/message/send', formData)
 
-      // Message is also emitted by Socket.IO.
-      // We don't append here to avoid duplicate messages.
+      /*
+       * Backend already emits the message
+       * through Socket.IO.
+       *
+       * Therefore don't add it here,
+       * otherwise duplicate messages
+       * can appear.
+       */
 
       return res
     } catch (error) {
