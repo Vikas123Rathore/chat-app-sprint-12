@@ -39,9 +39,7 @@ app.use(cookieParser());
 // Static uploads
 app.use(
   "/uploads",
-  express.static(
-    path.join(__dirname, "uploads")
-  )
+  express.static(path.join(__dirname, "uploads"))
 );
 
 // ==========================================
@@ -54,10 +52,13 @@ const allowedOrigins = [
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 
+console.log("Allowed CORS origins:", allowedOrigins);
+
 app.use(
   cors({
     origin: function (origin, callback) {
-      // Allow Postman / server-to-server requests
+      // Allow requests without an origin
+      // Example: Postman/server-to-server
       if (!origin) {
         return callback(null, true);
       }
@@ -81,25 +82,13 @@ app.use(
 // API ROUTES
 // ==========================================
 
-app.use(
-  "/api/auth",
-  authRoutes
-);
+app.use("/api/auth", authRoutes);
 
-app.use(
-  "/api/user",
-  userRoutes
-);
+app.use("/api/user", userRoutes);
 
-app.use(
-  "/api/room",
-  roomRoutes
-);
+app.use("/api/room", roomRoutes);
 
-app.use(
-  "/api/message",
-  messageRoutes
-);
+app.use("/api/message", messageRoutes);
 
 // ==========================================
 // HOME / TEST ROUTE
@@ -128,10 +117,7 @@ const io = new Server(server, {
 app.set("io", io);
 
 io.on("connection", (socket) => {
-  console.log(
-    "Socket connected:",
-    socket.id
-  );
+  console.log("Socket connected:", socket.id);
 
   socket.on("joinRoom", (roomId) => {
     socket.join(roomId);
