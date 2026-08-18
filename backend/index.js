@@ -1,55 +1,123 @@
-require('dotenv').config();
-const express = require('express');
-const http = require('http');
-const path = require('path');
-const cookieParser = require('cookie-parser');
-const cors = require('cors');
-const { Server } = require('socket.io');
-const connectDB = require('./config/db');
+require("dotenv").config();
 
-const authRoutes = require('./routes/authRoutes');
-const userRoutes = require('./routes/userRoutes');
-const roomRoutes = require('./routes/roomRoutes');
-const messageRoutes = require('./routes/messageRoutes');
+const express = require("express");
+const http = require("http");
+const path = require("path");
+const cookieParser = require("cookie-parser");
+const cors = require("cors");
+const { Server } = require("socket.io");
+
+const connectDB = require("./config/db");
+
+const authRoutes = require("./routes/authRoutes");
+const userRoutes = require("./routes/userRoutes");
+const roomRoutes = require("./routes/roomRoutes");
+const messageRoutes = require("./routes/messageRoutes");
 
 const app = express();
 
-// Connect to MongoDB
+// ==========================================
+// DATABASE
+// ==========================================
+
 connectDB();
 
-// Middleware
+// ==========================================
+// MIDDLEWARE
+// ==========================================
+
 app.use(express.json());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+app.use(
+  express.urlencoded({
+    extended: true,
+  })
+);
+
 app.use(cookieParser());
-const allowedOrigins = [process.env.FRONTEND_URL || 'http://localhost:5173', 'http://localhost:5174'];
+
+// Static uploads
+app.use(
+  "/uploads",
+  express.static(
+    path.join(__dirname, "uploads")
+  )
+);
+
+// ==========================================
+// CORS
+// ==========================================
+
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:5174",
+  process.env.FRONTEND_URL,
+].filter(Boolean);
+
 app.use(
   cors({
     origin: function (origin, callback) {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.indexOf(origin) !== -1) {
+      // Allow Postman / server-to-server requests
+      if (!origin) {
         return callback(null, true);
       }
-      return callback(new Error('CORS policy: Origin not allowed'));
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      console.log("Blocked CORS origin:", origin);
+
+      return callback(
+        new Error("CORS: Origin not allowed")
+      );
     },
+
     credentials: true,
   })
 );
 
-// Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/user', userRoutes);
-app.use('/api/room', roomRoutes);
-app.use('/api/message', messageRoutes);
+// ==========================================
+// API ROUTES
+// ==========================================
 
-app.get('/', (req, res) => res.send({ ok: true, message: 'ChatFlow API' }));
+app.use(
+  "/api/auth",
+  authRoutes
+);
 
-// debug endpoint to inspect cookies (development only)
-app.get('/api/debug/cookies', (req, res) => {
-  res.json({ cookies: req.cookies || {} });
+app.use(
+  "/api/user",
+  userRoutes
+);
+
+app.use(
+  "/api/room",
+  roomRoutes
+);
+
+app.use(
+  "/api/message",
+  messageRoutes
+);
+
+// ==========================================
+// HOME / TEST ROUTE
+// ==========================================
+
+app.get("/", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "ChatFlow API running",
+  });
 });
 
-// Create HTTP server and attach Socket.IO
+// ==========================================
+// SOCKET.IO
+// ==========================================
+
 const server = http.createServer(app);
+
 const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
@@ -57,24 +125,42 @@ const io = new Server(server, {
   },
 });
 
-// attach io to express app so controllers can emit
-app.set('io', io);
+app.set("io", io);
 
-io.on('connection', (socket) => {
-  console.log('socket connected', socket.id);
+io.on("connection", (socket) => {
+  console.log(
+    "Socket connected:",
+    socket.id
+  );
 
-  socket.on('joinRoom', (roomId) => {
+  socket.on("joinRoom", (roomId) => {
     socket.join(roomId);
+
+    console.log(
+      `Socket ${socket.id} joined room ${roomId}`
+    );
   });
 
-  socket.on('leaveRoom', (roomId) => {
+  socket.on("leaveRoom", (roomId) => {
     socket.leave(roomId);
   });
 
-  socket.on('disconnect', () => {
-    // handle disconnect if needed
+  socket.on("disconnect", () => {
+    console.log(
+      "Socket disconnected:",
+      socket.id
+    );
   });
 });
 
+// ==========================================
+// SERVER
+// ==========================================
+
 const PORT = process.env.PORT || 8000;
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+server.listen(PORT, () => {
+  console.log(
+    `ChatFlow server running on port ${PORT}`
+  );
+});
